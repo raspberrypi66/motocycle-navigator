@@ -105,6 +105,12 @@
                 <p id="nextTurnInstruction" class="text-xl font-bold">N/A</p>
             </div>
             
+            <!-- Road Information -->
+            <div class="bg-orange-50 p-4 rounded-lg">
+                <p class="text-xs font-semibold uppercase text-gray-500 mb-1">Road Information</p>
+                <p id="roadCurveInfo" class="text-xl font-bold">N/A</p>
+            </div>
+            
             <!-- Distance to Turn -->
             <div class="bg-green-50 p-4 rounded-lg">
                 <p class="text-xs font-semibold uppercase text-gray-500 mb-1">Distance to Turn</p>
@@ -168,6 +174,7 @@
         const etaEl = document.getElementById('eta');
         const messageBox = document.getElementById('messageBox');
         const messageText = document.getElementById('messageText');
+        const roadCurveInfoEl = document.getElementById('roadCurveInfo');
 
         let bleDevice;
         let map, directionsService, directionsRenderer;
@@ -206,6 +213,7 @@
                     nextKmPolyline.setMap(null);
                     nextKmPolyline = null;
                 }
+                roadCurveInfoEl.textContent = "N/A";
                 return;
             }
 
@@ -254,6 +262,7 @@
                     nextKmPolyline.setMap(null);
                     nextKmPolyline = null;
                 }
+                roadCurveInfoEl.textContent = "N/A";
                 return;
             }
 
@@ -278,7 +287,7 @@
             
             etaEl.textContent = `${remainingTime_min} min`;
 
-            // --- New Code to draw the next 1km polyline ---
+            // --- New Code to draw the next 1km polyline and update text display ---
             let nextKmPoints = [];
             let distanceTraversed = 0;
             const oneKm = 1000;
@@ -313,6 +322,14 @@
                     map: map
                 });
             }
+
+            // Update the road curve info display based on the number of points in the polyline
+            if (nextKmPoints.length > 5) { // A threshold to indicate a curvy road
+                roadCurveInfoEl.textContent = "Upcoming Curves Ahead!";
+            } else {
+                roadCurveInfoEl.textContent = "Straight Road Ahead.";
+            }
+
             // --- End of new code ---
         }
 
