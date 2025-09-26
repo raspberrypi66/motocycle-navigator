@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Motorcycle Navigator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .message-box {
+            display: none;
+        }
+        .message-box.show {
+            display: block;
+        }
+        #map {
+            height: 400px; /* Set a specific height for the map */
+            width: 100%;
+            border-radius: 0.75rem;
+        }
+        .task-done {
+            text-decoration: line-through;
+            color: #9ca3af;
+        }
+        .custom-checkbox {
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            height: 20px;
+            width: 20px;
+            background-color: #f3f4f6;
+            border: 2px solid #d1d5db;
+            border-radius: 4px;
+            cursor: pointer;
+            position: relative;
+            top: 2px;
+        }
+        .custom-checkbox:checked {
+            background-color: #10b981;
+            border-color: #10b981;
+        }
+        .custom-checkbox:checked::after {
+            content: '';
+            position: absolute;
+            left: 5px;
+            top: 1px;
+            width: 5px;
+            height: 10px;
+            border: solid white;
+            border-width: 0 2px 2px 0;
+            transform: rotate(45deg);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+
+    <!-- Main Container -->
+    <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-2xl mx-auto text-gray-800">
+        <!-- Title -->
+        <h1 class="text-3xl font-bold mb-6 text-center text-gray-900">Motorcycle Navigator</h1>
+        
+        <!-- Google Maps API Section -->
+        <div class="mb-6">
+            <h2 class="text-2xl font-semibold mb-4 text-gray-900">Route Planning</h2>
+            <div id="map" class="mb-4"></div>
+            <div class="space-y-4">
+                <button id="enableTrackingButton" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-lg transition-colors duration-300 shadow-md">
+                    Enable Live Tracking
+                </button>
+                <div>
+                    <label for="originInput" class="block text-sm font-medium text-gray-700 mb-1">Origin</label>
+                    <input type="text" id="originInput" placeholder="Enter origin (e.g., 'San Francisco')" class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label for="destinationInput" class="block text-sm font-medium text-gray-700 mb-1">Destination</label>
+                    <input type="text" id="destinationInput" placeholder="Enter destination (e.g., 'Los Angeles')" class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <button id="calculateRouteButton" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-6 rounded-lg transition-colors duration-300 shadow-md">
+                    Calculate Route
+                </button>
+            </div>
+        </div>
+        
+        <!-- Separator -->
+        <hr class="my-6 border-gray-300">
+
+        <!-- BLE Status & Connect Button -->
+        <div class="flex flex-col items-center justify-center mb-6">
+            <button id="connectButton" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-lg transition-colors duration-300 shadow-md">
+                Connect to Device
+            </button>
+            <span id="status" class="mt-4 text-sm text-gray-500 font-medium">Disconnected</span>
+        </div>
+        
+        <!-- Navigation Data Display -->
+        <div id="dataDisplay" class="space-y-4 hidden">
+            <h2 class="text-2xl font-semibold mb-4 text-gray-900 text-center">Navigation Panel</h2>
+            <!-- Next Turn Instruction -->
+            <div class="bg-blue-50 p-4 rounded-lg">
+                <p class="text-xs font-semibold uppercase text-gray-500 mb-1">Next Turn</p>
+                <p id="nextTurnInstruction" class="text-xl font-bold">N/A</p>
+            </div>
+            
+            <!-- Distance to Turn -->
+            <div class="bg-green-50 p-4 rounded-lg">
+                <p class="text-xs font-semibold uppercase text-gray-500 mb-1">Distance to Turn</p>
+                <p id="distanceToTurn" class="text-xl font-bold">N/A</p>
+            </div>
+            
+            <!-- Turn Direction -->
+            <div class="bg-yellow-50 p-4 rounded-lg">
+                <p class="text-xs font-semibold uppercase text-gray-500 mb-1">Turn Direction</p>
+                <p id="turnDirection" class="text-xl font-bold">N/A</p>
+            </div>
+            
+            <!-- Current Road Name -->
+            <div class="bg-red-50 p-4 rounded-lg">
+                <p class="text-xs font-semibold uppercase text-gray-500 mb-1">Current Road</p>
+                <p id="currentRoadName" class="text-xl font-bold">N/A</p>
+            </div>
+
+            <!-- Next Road Name -->
+            <div class="bg-purple-50 p-4 rounded-lg">
+                <p class="text-xs font-semibold uppercase text-gray-500 mb-1">Next Road</p>
+                <p id="nextRoadName" class="text-xl font-bold">N/A</p>
+            </div>
+
+            <!-- ETA -->
+            <div class="bg-indigo-50 p-4 rounded-lg">
+                <p class="text-xs font-semibold uppercase text-gray-500 mb-1">ETA</p>
+                <p id="eta" class="text-xl font-bold">N/A</p>
+            </div>
+        </div>
+        
+        <!-- Message Box -->
+        <div id="messageBox" class="message-box mt-6 bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-md">
+            <p id="messageText" class="font-medium"></p>
+        </div>
+    </div>
+    
+    <script>
+        // UUIDs for the BLE Service and Characteristics
+        const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+        const NEXT_TURN_INSTRUCTION_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+        const DISTANCE_TO_TURN_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+        const TURN_DIRECTION_UUID = "6e400004-b5a3-f393-e0a9-e50e24dcca9e";
+        const CURRENT_ROAD_NAME_UUID = "6e400005-b5a3-f393-e0a9-e50e24dcca9e";
+        const NEXT_ROAD_NAME_UUID = "6e400006-b5a3-f393-e0a9-e50e24dcca9e";
+        const ETA_UUID = "6e400007-b5a3-f393-e0a9-e50e24dcca9e";
+
+        // UI Element References
+        const connectButton = document.getElementById('connectButton');
+        const calculateRouteButton = document.getElementById('calculateRouteButton');
+        const enableTrackingButton = document.getElementById('enableTrackingButton');
+        const originInput = document.getElementById('originInput');
+        const destinationInput = document.getElementById('destinationInput');
+        const statusSpan = document.getElementById('status');
+        const dataDisplayDiv = document.getElementById('dataDisplay');
+        const nextTurnInstructionEl = document.getElementById('nextTurnInstruction');
+        const distanceToTurnEl = document.getElementById('distanceToTurn');
+        const turnDirectionEl = document.getElementById('turnDirection');
+        const currentRoadNameEl = document.getElementById('currentRoadName');
+        const nextRoadNameEl = document.getElementById('nextRoadName');
+        const etaEl = document.getElementById('eta');
+        const messageBox = document.getElementById('messageBox');
+        const messageText = document.getElementById('messageText');
+
+        let bleDevice;
+        let map, directionsService, directionsRenderer;
+        let userMarker; // To track the user's location on the map
+        let routePath = null; // Store the route's polyline
+        let currentStepIndex = 0;
+        let navigationSteps = [];
+        let hasGrantedLocation = false;
+
+        // Function to display a message in the message box
+        function displayMessage(message, isError = false) {
+            messageText.textContent = message;
+            if (isError) {
+                messageBox.classList.remove('bg-green-100', 'border-green-500', 'text-green-700');
+                messageBox.classList.add('bg-red-100', 'border-red-500', 'text-red-700');
+            } else {
+                messageBox.classList.remove('bg-red-100', 'border-red-500', 'text-red-700');
+                messageBox.classList.add('bg-green-100', 'border-green-500', 'text-green-700');
+            }
+            messageBox.classList.add('show');
+            // Hide the message after 5 seconds
+            setTimeout(() => {
+                messageBox.classList.remove('show');
+            }, 5000);
+        }
+
+        // Function to update the navigation panel in real-time
+        function updateNavigation(userLocation) {
+            if (!routePath || navigationSteps.length === 0) {
+                return;
+            }
+
+            // Find the closest point on the route to the user's location
+            let closestDistance = Infinity;
+            let closestPointOnRoute = null;
+
+            // Find the closest point on the entire route polyline
+            for (let i = 0; i < routePath.length; i++) {
+                const point = routePath[i];
+                const distance = google.maps.geometry.spherical.computeDistanceBetween(userLocation, point);
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closestPointOnRoute = point;
+                }
+            }
+            
+            // Iterate through the navigation steps to find the current step
+            let currentStepFound = false;
+            for (let i = currentStepIndex; i < navigationSteps.length; i++) {
+                const step = navigationSteps[i];
+                const stepStart = new google.maps.LatLng(step.start_location.lat(), step.start_location.lng());
+                const distanceToStepStart = google.maps.geometry.spherical.computeDistanceBetween(userLocation, stepStart);
+                
+                // If we are past the start of this step (within a reasonable tolerance)
+                if (distanceToStepStart < closestDistance + 50) { // 50 meters tolerance
+                    currentStepIndex = i;
+                    currentStepFound = true;
+                    console.log(`Advancing to step ${currentStepIndex + 1}`);
+                    break;
+                }
+            }
+
+            // If the user has completed the route
+            if (currentStepIndex >= navigationSteps.length) {
+                nextTurnInstructionEl.textContent = "You have arrived!";
+                distanceToTurnEl.textContent = "0 m";
+                turnDirectionEl.textContent = "N/A";
+                currentRoadNameEl.textContent = "N/A";
+                nextRoadNameEl.textContent = "N/A";
+                etaEl.textContent = "N/A";
+                return;
+            }
+
+            const currentStep = navigationSteps[currentStepIndex];
+            const remainingDistance = google.maps.geometry.spherical.computeDistanceBetween(userLocation, new google.maps.LatLng(currentStep.end_location.lat(), currentStep.end_location.lng()));
+            const remainingTime = remainingDistance / 5.556; // Assuming 20 km/h, which is 5.556 m/s
+
+            nextTurnInstructionEl.textContent = currentStep.instructions.replace(/<(?:.|\n)*?>/gm, '');
+            distanceToTurnEl.textContent = `${(remainingDistance).toFixed(0)} m`;
+            turnDirectionEl.textContent = "Live Direction"; // Placeholder
+            currentRoadNameEl.textContent = "Live Road"; // Placeholder
+            nextRoadNameEl.textContent = "Live Next Road"; // Placeholder
+            etaEl.textContent = "Live ETA"; // Placeholder
+        }
+
+        // Function to track the user's live location and update the map
+        function trackUserLocation() {
+            if (navigator.geolocation && !hasGrantedLocation) {
+                // Request location permission
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        console.log("Location permission granted.");
+                        hasGrantedLocation = true;
+                        displayMessage("Location tracking started.");
+                        enableTrackingButton.disabled = true;
+                        enableTrackingButton.textContent = "Tracking Enabled";
+
+                        navigator.geolocation.watchPosition(
+                            (position) => {
+                                const userLocation = new google.maps.LatLng(position.coords.latitude, position.coords.longitude);
+                                
+                                // If the marker doesn't exist, create it.
+                                if (!userMarker) {
+                                    userMarker = new google.maps.Marker({
+                                        position: userLocation,
+                                        map: map,
+                                        title: "Your Location",
+                                        icon: {
+                                            path: google.maps.SymbolPath.CIRCLE,
+                                            scale: 10,
+                                            fillColor: '#4285F4', // Google Blue
+                                            fillOpacity: 1,
+                                            strokeWeight: 2,
+                                            strokeColor: '#FFFFFF',
+                                        },
+                                    });
+                                } else {
+                                    // If it exists, just update its position
+                                    userMarker.setPosition(userLocation);
+                                }
+
+                                // Also center the map on the user's current location if a route is not being followed
+                                // This prevents the map from constantly recentering during a route
+                                if (navigationSteps.length === 0) {
+                                  map.setCenter(userLocation);
+                                }
+                                
+                                // Update navigation based on live location
+                                updateNavigation(userLocation);
+
+                                console.log(`Live location update: Lat ${userLocation.lat()}, Lng ${userLocation.lng()}`);
+                            },
+                            (error) => {
+                                console.error('Geolocation error:', error);
+                                displayMessage('Could not get your location. Please enable location services.', true);
+                            },
+                            {
+                                enableHighAccuracy: true,
+                                maximumAge: 0,
+                                timeout: 5000
+                            }
+                        );
+                    },
+                    (error) => {
+                        console.error('Initial geolocation permission error:', error);
+                        displayMessage('Location access denied. Please enable location permissions in your browser settings to use this feature.', true);
+                    }
+                );
+            } else if (!navigator.geolocation) {
+                 displayMessage("Geolocation is not supported by your browser.", true);
+            }
+        }
+
+        // Initialize and add the map
+        function initMap() {
+            directionsService = new google.maps.DirectionsService();
+            directionsRenderer = new google.maps.DirectionsRenderer();
+            
+            const defaultLocation = { lat: 34.0522, lng: -118.2437 }; // Los Angeles
+            map = new google.maps.Map(document.getElementById("map"), {
+                center: defaultLocation,
+                zoom: 12,
+            });
+            directionsRenderer.setMap(map);
+        }
+
+        // Calculate and display the route on the map
+        function calculateAndDisplayRoute() {
+            const origin = originInput.value;
+            const destination = destinationInput.value;
+
+            if (!origin || !destination) {
+                displayMessage("Please enter both origin and destination.", true);
+                return;
+            }
+
+            // Use the user's current location for the origin if not provided
+            if (origin === "" && hasGrantedLocation) {
+                 navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const userLocation = { lat: position.coords.latitude, lng: position.coords.longitude };
+                        directionsService.route({
+                            origin: userLocation,
+                            destination: destination,
+                            travelMode: google.maps.TravelMode.DRIVING,
+                        }, handleDirectionsResponse);
+                    },
+                    (error) => {
+                        console.error('Geolocation error:', error);
+                        displayMessage('Please enter a starting location or enable location services.', true);
+                    }
+                );
+            } else {
+                directionsService.route({
+                    origin: origin,
+                    destination: destination,
+                    travelMode: google.maps.TravelMode.DRIVING,
+                }, handleDirectionsResponse);
+            }
+        }
+
+        function handleDirectionsResponse(response, status) {
+            if (status === "OK") {
+                directionsRenderer.setDirections(response);
+                displayMessage("Route successfully calculated!");
+                dataDisplayDiv.classList.remove('hidden');
+
+                // Store the route and steps for real-time tracking
+                const route = response.routes[0];
+                if (route && route.legs && route.legs.length > 0) {
+                    const leg = route.legs[0];
+                    routePath = leg.steps.flatMap(step => step.path);
+                    navigationSteps = leg.steps;
+                    currentStepIndex = 0;
+                    
+                    // The updateNavigation function will now be called on each location update
+                }
+
+            } else {
+                displayMessage(`Error calculating route: ${status}`, true);
+            }
+        }
+        
+        // Event handler for characteristic value changes
+        function handleCharacteristicValueChanged(event) {
+            const characteristic = event.target;
+            const value = characteristic.value;
+
+            // Check the UUID and update the corresponding UI element
+            if (characteristic.uuid === NEXT_TURN_INSTRUCTION_UUID) {
+                nextTurnInstructionEl.textContent = new TextDecoder().decode(value);
+            } else if (characteristic.uuid === DISTANCE_TO_TURN_UUID) {
+                distanceToTurnEl.textContent = value.getUint16(0, true) + " m";
+            } else if (characteristic.uuid === TURN_DIRECTION_UUID) {
+                // You can map the byte value to a string or icon
+                const direction = value.getUint8(0);
+                turnDirectionEl.textContent = direction; // Replace with a meaningful string or symbol
+            } else if (characteristic.uuid === CURRENT_ROAD_NAME_UUID) {
+                currentRoadNameEl.textContent = new TextDecoder().decode(value);
+            } else if (characteristic.uuid === NEXT_ROAD_NAME_UUID) {
+                nextRoadNameEl.textContent = new TextDecoder().decode(value);
+            } else if (characteristic.uuid === ETA_UUID) {
+                etaEl.textContent = value.getUint16(0, true) + " min";
+            }
+        }
+
+        // Function to connect to the BLE device
+        async function connect() {
+            try {
+                // Hide data display and show loading status
+                dataDisplayDiv.classList.add('hidden');
+                statusSpan.textContent = "Scanning...";
+                connectButton.disabled = true;
+
+                // Request the device with the specified service
+                bleDevice = await navigator.bluetooth.requestDevice({
+                    filters: [{ services: [SERVICE_UUID] }]
+                });
+
+                statusSpan.textContent = `Connecting to ${bleDevice.name}...`;
+
+                // Set up event listener for disconnects
+                bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+                // Connect to the GATT server
+                const server = await bleDevice.gatt.connect();
+
+                statusSpan.textContent = "Getting Service...";
+
+                // Get the primary service
+                const service = await server.getPrimaryService(SERVICE_UUID);
+
+                statusSpan.textContent = "Getting Characteristics...";
+
+                // Get all characteristics
+                const characteristics = await service.getCharacteristics();
+
+                // Set up notifications for each characteristic
+                characteristics.forEach(async (char) => {
+                    if (char.properties.notify) {
+                        await char.startNotifications();
+                        char.addEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
+                        console.log(`Notifications started for characteristic: ${char.uuid}`);
+                    }
+                });
+                
+                statusSpan.textContent = "Connected!";
+                dataDisplayDiv.classList.remove('hidden');
+                displayMessage("Successfully connected to the device!");
+                
+            } catch (error) {
+                console.error('BLE connection error:', error);
+                statusSpan.textContent = "Disconnected";
+                connectButton.disabled = false;
+                dataDisplayDiv.classList.add('hidden');
+                displayMessage(`Connection failed: ${error.message}`, true);
+            }
+        }
+
+        // Function to handle disconnects
+        function onDisconnected(event) {
+            const device = event.target;
+            console.log(`Device ${device.name} disconnected.`);
+            statusSpan.textContent = "Disconnected";
+            connectButton.disabled = false;
+            dataDisplayDiv.classList.add('hidden');
+            displayMessage("Device disconnected. Click 'Connect' to reconnect.", true);
+        }
+
+        // Add event listeners to the buttons
+        connectButton.addEventListener('click', connect);
+        calculateRouteButton.addEventListener('click', calculateAndDisplayRoute);
+        enableTrackingButton.addEventListener('click', trackUserLocation);
+
+    </script>
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB-NXVll1SQAbzDhRRbTmVzs6t1vr7Ftxs=&callback=initMap&libraries=geometry&signature=6wQ_lnbB92J3tf3KVD7BD9DNkMw="></script>
+</body>
+</html>
