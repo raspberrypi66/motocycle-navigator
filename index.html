@@ -55,9 +55,10 @@
             transform: rotate(45deg);
         }
         #roadCurveCanvas {
-            border: 2px solid #ccc;
-            border-radius: 8px;
-            background-color: #fff;
+            border-radius: 9999px; /* Make it a circle */
+            background-color: #374151; /* Dark background */
+            width: 150px; /* Square container for the circle */
+            height: 150px;
         }
     </style>
 </head>
@@ -102,7 +103,7 @@
             <!-- Road Curve Visualization Canvas -->
             <div class="bg-gray-100 p-4 rounded-lg flex flex-col items-center justify-center">
                 <p class="text-xs font-semibold uppercase text-gray-500 mb-2">Upcoming Road Curve</p>
-                <canvas id="roadCurveCanvas" width="200" height="150"></canvas>
+                <canvas id="roadCurveCanvas" width="200" height="200"></canvas>
             </div>
 
             <!-- Next Turn Instruction -->
@@ -185,7 +186,6 @@
         const ctx = roadCurveCanvas.getContext('2d');
         const canvasWidth = roadCurveCanvas.width;
         const canvasHeight = roadCurveCanvas.height;
-
 
         let bleDevice;
         let map, directionsService, directionsRenderer;
@@ -291,16 +291,16 @@
             // --- New Code to draw the next 1km road curve on a dedicated canvas ---
             let nextKmPoints = [];
             let distanceTraversed = 0;
-            const oneKm = 1000;
+            const viewDistance = 500; // Show the next 500 meters
 
             if (closestPointIndex !== -1) {
-                // Get the next 1km of the route
+                // Get the next 500m of the route
                 for (let i = closestPointIndex; i < routePath.length; i++) {
                     const point = routePath[i];
                     if (i > 0) {
                         distanceTraversed += google.maps.geometry.spherical.computeDistanceBetween(routePath[i - 1], point);
                     }
-                    if (distanceTraversed > oneKm) {
+                    if (distanceTraversed > viewDistance) {
                         break;
                     }
                     nextKmPoints.push(point);
@@ -325,6 +325,27 @@
             ctx.clearRect(0, 0, canvasWidth, canvasHeight);
             if (points.length === 0) return;
 
+            // Find the point on the path closest to the user
+            const closestPoint = points.reduce((closest, current) => {
+                const currentDist = google.maps.geometry.spherical.computeDistanceBetween(userLocation, current);
+                const closestDist = google.maps.geometry.spherical.computeDistanceBetween(userLocation, closest);
+                return (currentDist < closestDist) ? current : closest;
+            });
+
+            // Calculate the angle of the path at the user's location
+            let rotationAngle = 0;
+            if (points.length > 1) {
+                const nextPoint = points[1];
+                const deltaLat = nextPoint.lat() - userLocation.lat();
+                const deltaLng = nextPoint.lng() - userLocation.lng();
+                rotationAngle = Math.atan2(deltaLng, deltaLat);
+            }
+
+            // Save the current canvas state
+            ctx.save();
+            ctx.translate(canvasWidth / 2, canvasHeight / 2);
+            ctx.rotate(-rotationAngle);
+            
             // Get min/max lat/lng to normalize coordinates
             let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
             points.forEach(p => {
@@ -336,36 +357,32 @@
 
             const latSpan = maxLat - minLat;
             const lngSpan = maxLng - minLng;
-            const scaleFactor = Math.min(canvasWidth / (lngSpan * 111320), canvasHeight / (latSpan * 111320)) * 0.8; // Use 111320 m/degree for ~lat conversion
+            // Use a constant scale factor to maintain a consistent zoom level
+            const scaleFactor = 150000; // Adjust this value to zoom in/out
 
-            ctx.beginPath();
-            ctx.strokeStyle = '#374151'; // A dark gray for the road
-            ctx.lineWidth = 4;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-
-            // Function to map geo coords to canvas coords
+            // Function to map geo coords to canvas coords, centered and scaled
             const mapPointToCanvas = (point) => {
-                const x = (point.lng() - minLng) * scaleFactor;
-                const y = canvasHeight - ((point.lat() - minLat) * scaleFactor);
+                const x = (point.lng() - userLocation.lng()) * scaleFactor;
+                const y = (point.lat() - userLocation.lat()) * scaleFactor;
                 return { x, y };
             };
 
+            // Draw the road
+            ctx.beginPath();
+            ctx.strokeStyle = '#FFFFFF'; // White road line
+            ctx.lineWidth = 8;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
             const firstPoint = mapPointToCanvas(points[0]);
             ctx.moveTo(firstPoint.x, firstPoint.y);
-
             points.forEach(point => {
                 const { x, y } = mapPointToCanvas(point);
                 ctx.lineTo(x, y);
             });
             ctx.stroke();
 
-            // Draw a dot for the user's current position
-            const userCanvasPos = mapPointToCanvas(userLocation);
-            ctx.beginPath();
-            ctx.fillStyle = '#10B981'; // Green dot
-            ctx.arc(userCanvasPos.x, userCanvasPos.y, 5, 0, Math.PI * 2);
-            ctx.fill();
+            // Restore the canvas state
+            ctx.restore();
         }
 
         // Initialize and add the map
