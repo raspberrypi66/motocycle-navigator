@@ -176,6 +176,9 @@
         let currentStepIndex = 0;
         let navigationSteps = [];
         let hasGrantedLocation = false;
+        let geoWatchID = null;
+        let lastPosition = null;
+        let lastTimestamp = null;
 
         // Function to display a message in the message box
         function displayMessage(message, isError = false) {
@@ -184,7 +187,7 @@
                 messageBox.classList.remove('bg-green-100', 'border-green-500', 'text-green-700');
                 messageBox.classList.add('bg-red-100', 'border-red-500', 'text-red-700');
             } else {
-                messageBox.classList.remove('bg-red-100', 'border-red-500', 'text-red-700');
+                messageBox.classList.remove('bg-red-100', 'border-red-500', 'text-green-700');
                 messageBox.classList.add('bg-green-100', 'border-green-500', 'text-green-700');
             }
             messageBox.classList.add('show');
@@ -195,7 +198,7 @@
         }
 
         // Function to update the navigation panel in real-time
-        function updateNavigation(userLocation) {
+        function updateNavigation(userLocation, userSpeed_mps) {
             if (!routePath || navigationSteps.length === 0) {
                 return;
             }
@@ -243,18 +246,33 @@
 
             const currentStep = navigationSteps[currentStepIndex];
             const remainingDistance = google.maps.geometry.spherical.computeDistanceBetween(userLocation, new google.maps.LatLng(currentStep.end_location.lat(), currentStep.end_location.lng()));
-            const remainingTime = remainingDistance / 5.556; // Assuming 20 km/h, which is 5.556 m/s
+            
+            // Calculate ETA based on dynamic speed
+            const speed_mps = (userSpeed_mps > 0) ? userSpeed_mps : 2.778; // Default to 10 km/h if speed is 0
+            const remainingTime_s = remainingDistance / speed_mps;
+            const remainingTime_min = Math.ceil(remainingTime_s / 60);
 
             nextTurnInstructionEl.textContent = currentStep.instructions.replace(/<(?:.|\n)*?>/gm, '');
             distanceToTurnEl.textContent = `${(remainingDistance).toFixed(0)} m`;
-            turnDirectionEl.textContent = "Live Direction"; // Placeholder
-            currentRoadNameEl.textContent = "Live Road"; // Placeholder
-            nextRoadNameEl.textContent = "Live Next Road"; // Placeholder
-            etaEl.textContent = "Live ETA"; // Placeholder
+            
+            // Extract maneuver and road information from the API response
+            const maneuver = currentStep.maneuver;
+            const nextRoad = currentStep.html_instructions.match(/on (.*?) and/);
+            
+            turnDirectionEl.textContent = maneuver ? maneuver.replace(/_/g, ' ') : "Straight";
+            currentRoadNameEl.textContent = "Your current road"; // This is a limitation, we can't get this easily
+            nextRoadNameEl.textContent = nextRoad ? nextRoad[1] : currentStep.html_instructions.replace(/<(?:.|\n)*?>/gm, '');
+            
+            etaEl.textContent = `${remainingTime_min} min`;
         }
 
         // Function to track the user's live location and update the map
         function trackUserLocation() {
+            if (geoWatchID !== null) {
+                displayMessage("Location tracking is already enabled.");
+                return;
+            }
+
             if (navigator.geolocation && !hasGrantedLocation) {
                 // Request location permission
                 navigator.geolocation.getCurrentPosition(
@@ -264,11 +282,25 @@
                         displayMessage("Location tracking started.");
                         enableTrackingButton.disabled = true;
                         enableTrackingButton.textContent = "Tracking Enabled";
-
-                        navigator.geolocation.watchPosition(
+                        
+                        // Start watching for position changes
+                        geoWatchID = navigator.geolocation.watchPosition(
                             (position) => {
                                 const userLocation = new google.maps.LatLng(position.coords.latitude, position.coords.longitude);
                                 
+                                // Calculate speed
+                                let userSpeed_mps = 0;
+                                if (lastPosition && lastTimestamp) {
+                                    const distance = google.maps.geometry.spherical.computeDistanceBetween(lastPosition, userLocation);
+                                    const timeElapsed = (position.timestamp - lastTimestamp) / 1000; // in seconds
+                                    userSpeed_mps = distance / timeElapsed;
+                                } else if (position.coords.speed !== null) {
+                                    // Fallback to the device's native speed if available
+                                    userSpeed_mps = position.coords.speed;
+                                }
+                                lastPosition = userLocation;
+                                lastTimestamp = position.timestamp;
+
                                 // If the marker doesn't exist, create it.
                                 if (!userMarker) {
                                     userMarker = new google.maps.Marker({
@@ -296,7 +328,7 @@
                                 }
                                 
                                 // Update navigation based on live location
-                                updateNavigation(userLocation);
+                                updateNavigation(userLocation, userSpeed_mps);
 
                                 console.log(`Live location update: Lat ${userLocation.lat()}, Lng ${userLocation.lng()}`);
                             },
