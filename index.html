@@ -173,6 +173,7 @@
         let map, directionsService, directionsRenderer;
         let userMarker; // To track the user's location on the map
         let routePath = null; // Store the route's polyline
+        let nextKmPolyline = null; // Polyline for the next 1km of the route
         let currentStepIndex = 0;
         let navigationSteps = [];
         let hasGrantedLocation = false;
@@ -200,12 +201,18 @@
         // Function to update the navigation panel in real-time
         function updateNavigation(userLocation, userSpeed_mps) {
             if (!routePath || navigationSteps.length === 0) {
+                // If the route is completed, remove the next 1km polyline
+                if (nextKmPolyline) {
+                    nextKmPolyline.setMap(null);
+                    nextKmPolyline = null;
+                }
                 return;
             }
 
             // Find the closest point on the route to the user's location
             let closestDistance = Infinity;
             let closestPointOnRoute = null;
+            let closestPointIndex = -1;
 
             // Find the closest point on the entire route polyline
             for (let i = 0; i < routePath.length; i++) {
@@ -214,6 +221,7 @@
                 if (distance < closestDistance) {
                     closestDistance = distance;
                     closestPointOnRoute = point;
+                    closestPointIndex = i;
                 }
             }
             
@@ -241,6 +249,11 @@
                 currentRoadNameEl.textContent = "N/A";
                 nextRoadNameEl.textContent = "N/A";
                 etaEl.textContent = "N/A";
+                // Remove the polyline
+                if (nextKmPolyline) {
+                    nextKmPolyline.setMap(null);
+                    nextKmPolyline = null;
+                }
                 return;
             }
 
@@ -264,6 +277,43 @@
             nextRoadNameEl.textContent = nextRoad ? nextRoad[1] : currentStep.html_instructions.replace(/<(?:.|\n)*?>/gm, '');
             
             etaEl.textContent = `${remainingTime_min} min`;
+
+            // --- New Code to draw the next 1km polyline ---
+            let nextKmPoints = [];
+            let distanceTraversed = 0;
+            const oneKm = 1000;
+
+            if (closestPointIndex !== -1) {
+                // Add the user's current location to the start of the polyline
+                nextKmPoints.push(userLocation);
+
+                for (let i = closestPointIndex; i < routePath.length; i++) {
+                    const point = routePath[i];
+                    if (i > 0) {
+                        // Calculate distance from the previous point
+                        distanceTraversed += google.maps.geometry.spherical.computeDistanceBetween(routePath[i - 1], point);
+                    }
+                    if (distanceTraversed > oneKm) {
+                        break;
+                    }
+                    nextKmPoints.push(point);
+                }
+            }
+
+            if (nextKmPolyline) {
+                // If polyline already exists, just update its path
+                nextKmPolyline.setPath(nextKmPoints);
+            } else {
+                // If it doesn't exist, create it
+                nextKmPolyline = new google.maps.Polyline({
+                    path: nextKmPoints,
+                    strokeColor: '#FFD700', // Gold color
+                    strokeOpacity: 0.9,
+                    strokeWeight: 6,
+                    map: map
+                });
+            }
+            // --- End of new code ---
         }
 
         // Function to track the user's live location and update the map
