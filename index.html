@@ -54,6 +54,11 @@
             border-width: 0 2px 2px 0;
             transform: rotate(45deg);
         }
+        #roadCurveCanvas {
+            border: 2px solid #ccc;
+            border-radius: 8px;
+            background-color: #fff;
+        }
     </style>
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
@@ -93,6 +98,13 @@
         <!-- Navigation Data Display -->
         <div id="dataDisplay" class="space-y-4 hidden">
             <h2 class="text-2xl font-semibold mb-4 text-gray-900 text-center">Navigation Panel</h2>
+
+            <!-- Road Curve Visualization Canvas -->
+            <div class="bg-gray-100 p-4 rounded-lg flex flex-col items-center justify-center">
+                <p class="text-xs font-semibold uppercase text-gray-500 mb-2">Upcoming Road Curve</p>
+                <canvas id="roadCurveCanvas" width="200" height="150"></canvas>
+            </div>
+
             <!-- Next Turn Instruction -->
             <div class="bg-blue-50 p-4 rounded-lg">
                 <p class="text-xs font-semibold uppercase text-gray-500 mb-1">Next Turn</p>
@@ -168,11 +180,17 @@
         const messageText = document.getElementById('messageText');
         const roadCurveInfoEl = document.getElementById('roadCurveInfo');
 
+        // New canvas-related references
+        const roadCurveCanvas = document.getElementById('roadCurveCanvas');
+        const ctx = roadCurveCanvas.getContext('2d');
+        const canvasWidth = roadCurveCanvas.width;
+        const canvasHeight = roadCurveCanvas.height;
+
+
         let bleDevice;
         let map, directionsService, directionsRenderer;
         let userMarker; // To track the user's location on the map
         let routePath = null; // Store the route's polyline
-        let nextKmPolyline = null; // Polyline for the next 1km of the route
         let currentStepIndex = 0;
         let navigationSteps = [];
         let hasGrantedLocation = false;
@@ -200,11 +218,6 @@
         // Function to update the navigation panel in real-time
         function updateNavigation(userLocation, userSpeed_mps) {
             if (!routePath || navigationSteps.length === 0) {
-                // If the route is completed, remove the next 1km polyline
-                if (nextKmPolyline) {
-                    nextKmPolyline.setMap(null);
-                    nextKmPolyline = null;
-                }
                 roadCurveInfoEl.textContent = "N/A";
                 return;
             }
@@ -249,12 +262,8 @@
                 currentRoadNameEl.textContent = "N/A";
                 nextRoadNameEl.textContent = "N/A";
                 etaEl.textContent = "N/A";
-                // Remove the polyline
-                if (nextKmPolyline) {
-                    nextKmPolyline.setMap(null);
-                    nextKmPolyline = null;
-                }
                 roadCurveInfoEl.textContent = "N/A";
+                drawRoadCurveVisualization([]); // Clear the canvas
                 return;
             }
 
@@ -279,19 +288,16 @@
             
             etaEl.textContent = `${remainingTime_min} min`;
 
-            // --- New Code to draw the next 1km polyline and update text display ---
+            // --- New Code to draw the next 1km road curve on a dedicated canvas ---
             let nextKmPoints = [];
             let distanceTraversed = 0;
             const oneKm = 1000;
 
             if (closestPointIndex !== -1) {
-                // Add the user's current location to the start of the polyline
-                nextKmPoints.push(userLocation);
-
+                // Get the next 1km of the route
                 for (let i = closestPointIndex; i < routePath.length; i++) {
                     const point = routePath[i];
                     if (i > 0) {
-                        // Calculate distance from the previous point
                         distanceTraversed += google.maps.geometry.spherical.computeDistanceBetween(routePath[i - 1], point);
                     }
                     if (distanceTraversed > oneKm) {
@@ -301,19 +307,8 @@
                 }
             }
 
-            if (nextKmPolyline) {
-                // If polyline already exists, just update its path
-                nextKmPolyline.setPath(nextKmPoints);
-            } else {
-                // If it doesn't exist, create it
-                nextKmPolyline = new google.maps.Polyline({
-                    path: nextKmPoints,
-                    strokeColor: '#FFD700', // Gold color
-                    strokeOpacity: 0.9,
-                    strokeWeight: 6,
-                    map: map
-                });
-            }
+            // Draw the road curve on the new canvas
+            drawRoadCurveVisualization(nextKmPoints, userLocation);
 
             // Update the road curve info display based on the number of points in the polyline
             if (nextKmPoints.length > 5) { // A threshold to indicate a curvy road
@@ -323,6 +318,54 @@
             }
 
             // --- End of new code ---
+        }
+
+        // Function to draw the road curve on the canvas
+        function drawRoadCurveVisualization(points, userLocation) {
+            ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+            if (points.length === 0) return;
+
+            // Get min/max lat/lng to normalize coordinates
+            let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+            points.forEach(p => {
+                minLat = Math.min(minLat, p.lat());
+                maxLat = Math.max(maxLat, p.lat());
+                minLng = Math.min(minLng, p.lng());
+                maxLng = Math.max(maxLng, p.lng());
+            });
+
+            const latSpan = maxLat - minLat;
+            const lngSpan = maxLng - minLng;
+            const scaleFactor = Math.min(canvasWidth / (lngSpan * 111320), canvasHeight / (latSpan * 111320)) * 0.8; // Use 111320 m/degree for ~lat conversion
+
+            ctx.beginPath();
+            ctx.strokeStyle = '#374151'; // A dark gray for the road
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            // Function to map geo coords to canvas coords
+            const mapPointToCanvas = (point) => {
+                const x = (point.lng() - minLng) * scaleFactor;
+                const y = canvasHeight - ((point.lat() - minLat) * scaleFactor);
+                return { x, y };
+            };
+
+            const firstPoint = mapPointToCanvas(points[0]);
+            ctx.moveTo(firstPoint.x, firstPoint.y);
+
+            points.forEach(point => {
+                const { x, y } = mapPointToCanvas(point);
+                ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+
+            // Draw a dot for the user's current position
+            const userCanvasPos = mapPointToCanvas(userLocation);
+            ctx.beginPath();
+            ctx.fillStyle = '#10B981'; // Green dot
+            ctx.arc(userCanvasPos.x, userCanvasPos.y, 5, 0, Math.PI * 2);
+            ctx.fill();
         }
 
         // Initialize and add the map
