@@ -156,14 +156,8 @@
     </div>
     
     <script>
-        // UUIDs for the BLE Service and Characteristics
+        // UUIDs for the BLE Service and Characteristics (simulated for demonstration)
         const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-        const NEXT_TURN_INSTRUCTION_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
-        const DISTANCE_TO_TURN_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
-        const TURN_DIRECTION_UUID = "6e400004-b5a3-f393-e0a9-e50e24dcca9e";
-        const CURRENT_ROAD_NAME_UUID = "6e400005-b5a3-f393-e0a9-e50e24dcca9e";
-        const NEXT_ROAD_NAME_UUID = "6e400006-b5a3-f393-e0a9-e50e24dcca9e";
-        const ETA_UUID = "6e400007-b5a3-f393-e0a9-e50e24dcca9e";
 
         // UI Element References
         const connectButton = document.getElementById('connectButton');
@@ -189,14 +183,14 @@
 
         let bleDevice;
         let map, directionsService, directionsRenderer;
-        let userMarker; // To track the user's location on the map
-        let routePath = null; // Store the route's polyline
+        let userMarker;
+        let routePath = null;
         let currentStepIndex = 0;
         let navigationSteps = [];
-        let hasGrantedLocation = false;
         let geoWatchID = null;
         let lastPosition = null;
         let lastTimestamp = null;
+        let routeTransferred = false; // Flag to simulate route sync
 
         // Function to display a message in the message box
         function displayMessage(message, isError = false) {
@@ -209,22 +203,54 @@
                 messageBox.classList.add('bg-green-100', 'border-green-500', 'text-green-700');
             }
             messageBox.classList.add('show');
-            // Hide the message after 5 seconds
             setTimeout(() => {
                 messageBox.classList.remove('show');
             }, 5000);
         }
 
-        // Function to update the navigation panel in real-time
+        // --- NEW: Simulate BLE connection and data transfer ---
+        function simulateBLEConnection() {
+            return new Promise((resolve, reject) => {
+                setTimeout(() => {
+                    const success = Math.random() > 0.1; // 90% chance of success
+                    if (success) {
+                        statusSpan.textContent = "Connected!";
+                        displayMessage("Successfully connected to the device!");
+                        resolve();
+                    } else {
+                        statusSpan.textContent = "Disconnected";
+                        displayMessage("Connection failed. Please try again.", true);
+                        reject(new Error("Simulated BLE connection failed."));
+                    }
+                }, 1500); // Simulate connection delay
+            });
+        }
+
+        async function connect() {
+            try {
+                dataDisplayDiv.classList.add('hidden');
+                statusSpan.textContent = "Scanning...";
+                connectButton.disabled = true;
+
+                // Simulate device connection
+                await simulateBLEConnection();
+
+            } catch (error) {
+                console.error('BLE connection error:', error);
+                statusSpan.textContent = "Disconnected";
+                connectButton.disabled = false;
+                dataDisplayDiv.classList.add('hidden');
+            }
+        }
+        
+        // Function to update the navigation panel in real-time (on the device)
         function updateNavigation(userLocation, userSpeed_mps) {
             if (!routePath || navigationSteps.length === 0) {
                 roadCurveInfoEl.textContent = "N/A";
                 return;
             }
 
-            // Find the closest point on the route to the user's location
             let closestDistance = Infinity;
-            let closestPointOnRoute = null;
             let closestPointIndex = -1;
 
             // Find the closest point on the entire route polyline
@@ -233,28 +259,23 @@
                 const distance = google.maps.geometry.spherical.computeDistanceBetween(userLocation, point);
                 if (distance < closestDistance) {
                     closestDistance = distance;
-                    closestPointOnRoute = point;
                     closestPointIndex = i;
                 }
             }
             
-            // Iterate through the navigation steps to find the current step
             let currentStepFound = false;
             for (let i = currentStepIndex; i < navigationSteps.length; i++) {
                 const step = navigationSteps[i];
                 const stepStart = new google.maps.LatLng(step.start_location.lat(), step.start_location.lng());
                 const distanceToStepStart = google.maps.geometry.spherical.computeDistanceBetween(userLocation, stepStart);
                 
-                // If we are past the start of this step (within a reasonable tolerance)
-                if (distanceToStepStart < closestDistance + 50) { // 50 meters tolerance
+                if (distanceToStepStart < closestDistance + 50) {
                     currentStepIndex = i;
                     currentStepFound = true;
-                    console.log(`Advancing to step ${currentStepIndex + 1}`);
                     break;
                 }
             }
 
-            // If the user has completed the route
             if (currentStepIndex >= navigationSteps.length) {
                 nextTurnInstructionEl.textContent = "You have arrived!";
                 distanceToTurnEl.textContent = "0 m";
@@ -263,38 +284,34 @@
                 nextRoadNameEl.textContent = "N/A";
                 etaEl.textContent = "N/A";
                 roadCurveInfoEl.textContent = "N/A";
-                drawRoadCurveVisualization([]); // Clear the canvas
+                drawRoadCurveVisualization([]);
                 return;
             }
 
             const currentStep = navigationSteps[currentStepIndex];
             const remainingDistance = google.maps.geometry.spherical.computeDistanceBetween(userLocation, new google.maps.LatLng(currentStep.end_location.lat(), currentStep.end_location.lng()));
             
-            // Calculate ETA based on dynamic speed
-            const speed_mps = (userSpeed_mps > 0) ? userSpeed_mps : 2.778; // Default to 10 km/h if speed is 0
+            const speed_mps = (userSpeed_mps > 0) ? userSpeed_mps : 2.778;
             const remainingTime_s = remainingDistance / speed_mps;
             const remainingTime_min = Math.ceil(remainingTime_s / 60);
 
             nextTurnInstructionEl.textContent = currentStep.instructions ? currentStep.instructions.replace(/<(?:.|\n)*?>/gm, '') : 'N/A';
             distanceToTurnEl.textContent = `${(remainingDistance).toFixed(0)} m`;
             
-            // Extract maneuver and road information from the API response
             const maneuver = currentStep.maneuver;
             const nextRoad = currentStep.html_instructions ? currentStep.html_instructions.match(/on (.*?) and/) : null;
             
             turnDirectionEl.textContent = maneuver ? maneuver.replace(/_/g, ' ') : "Straight";
-            currentRoadNameEl.textContent = "Your current road"; // This is a limitation, we can't get this easily
+            currentRoadNameEl.textContent = "Your current road";
             nextRoadNameEl.textContent = (nextRoad && nextRoad[1]) ? nextRoad[1] : (currentStep.html_instructions ? currentStep.html_instructions.replace(/<(?:.|\n)*?>/gm, '') : 'N/A');
             
             etaEl.textContent = `${remainingTime_min} min`;
 
-            // --- New Code to draw the next 1km road curve on a dedicated canvas ---
             let nextKmPoints = [];
             let distanceTraversed = 0;
-            const viewDistance = 500; // Show the next 500 meters
+            const viewDistance = 500;
 
             if (closestPointIndex !== -1) {
-                // Get the next 500m of the route
                 for (let i = closestPointIndex; i < routePath.length; i++) {
                     const point = routePath[i];
                     if (i > 0) {
@@ -307,17 +324,13 @@
                 }
             }
 
-            // Draw the road curve on the new canvas
             drawRoadCurveVisualization(nextKmPoints, userLocation);
 
-            // Update the road curve info display based on the number of points in the polyline
-            if (nextKmPoints.length > 5) { // A threshold to indicate a curvy road
+            if (nextKmPoints.length > 5) {
                 roadCurveInfoEl.textContent = "Upcoming Curves Ahead!";
             } else {
                 roadCurveInfoEl.textContent = "Straight Road Ahead.";
             }
-
-            // --- End of new code ---
         }
 
         // Function to draw the road curve on the canvas
@@ -325,14 +338,12 @@
             ctx.clearRect(0, 0, canvasWidth, canvasHeight);
             if (points.length === 0) return;
 
-            // Find the point on the path closest to the user
             const closestPoint = points.reduce((closest, current) => {
                 const currentDist = google.maps.geometry.spherical.computeDistanceBetween(userLocation, current);
                 const closestDist = google.maps.geometry.spherical.computeDistanceBetween(userLocation, closest);
                 return (currentDist < closestDist) ? current : closest;
             });
 
-            // Calculate the angle of the path at the user's location
             let rotationAngle = 0;
             if (points.length > 1) {
                 const nextPoint = points[1];
@@ -341,12 +352,10 @@
                 rotationAngle = Math.atan2(deltaLng, deltaLat);
             }
 
-            // Save the current canvas state
             ctx.save();
             ctx.translate(canvasWidth / 2, canvasHeight / 2);
             ctx.rotate(-rotationAngle);
             
-            // Get min/max lat/lng to normalize coordinates
             let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
             points.forEach(p => {
                 minLat = Math.min(minLat, p.lat());
@@ -357,19 +366,16 @@
 
             const latSpan = maxLat - minLat;
             const lngSpan = maxLng - minLng;
-            // Use a constant scale factor to maintain a consistent zoom level
-            const scaleFactor = 150000; // Adjust this value to zoom in/out
+            const scaleFactor = 150000;
 
-            // Function to map geo coords to canvas coords, centered and scaled
             const mapPointToCanvas = (point) => {
                 const x = (point.lng() - userLocation.lng()) * scaleFactor;
                 const y = (point.lat() - userLocation.lat()) * scaleFactor;
                 return { x, y };
             };
 
-            // Draw the road
             ctx.beginPath();
-            ctx.strokeStyle = '#FFFFFF'; // White road line
+            ctx.strokeStyle = '#FFFFFF';
             ctx.lineWidth = 8;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
@@ -381,7 +387,6 @@
             });
             ctx.stroke();
 
-            // Restore the canvas state
             ctx.restore();
         }
 
@@ -413,7 +418,6 @@
             });
         }
 
-        // Calculate and display the route on the map
         async function calculateAndDisplayRoute() {
             const destination = destinationInput.value;
             const originalButtonText = calculateRouteButton.textContent;
@@ -438,17 +442,18 @@
                 });
 
                 directionsRenderer.setDirections(response);
-                displayMessage("Route successfully calculated! Live tracking started.");
-                dataDisplayDiv.classList.remove('hidden');
-
-                // Store the route and steps for real-time tracking
+                
                 const route = response.routes[0];
                 if (route && route.legs && route.legs.length > 0) {
                     const leg = route.legs[0];
                     routePath = leg.steps.flatMap(step => step.path);
                     navigationSteps = leg.steps;
                     currentStepIndex = 0;
+                    routeTransferred = true; // Route is now "synced" to the device
                     
+                    displayMessage("Route successfully calculated and synced to device!");
+                    dataDisplayDiv.classList.remove('hidden');
+
                     // Start live tracking now that a route is calculated
                     trackUserLocation();
                 }
@@ -465,27 +470,24 @@
         // Function to track the user's live location and update the map
         function trackUserLocation() {
             if (geoWatchID !== null) {
-                return; // Already tracking
+                return;
             }
 
             geoWatchID = navigator.geolocation.watchPosition(
                 (position) => {
                     const userLocation = new google.maps.LatLng(position.coords.latitude, position.coords.longitude);
                     
-                    // Calculate speed
                     let userSpeed_mps = 0;
                     if (lastPosition && lastTimestamp) {
                         const distance = google.maps.geometry.spherical.computeDistanceBetween(lastPosition, userLocation);
-                        const timeElapsed = (position.timestamp - lastTimestamp) / 1000; // in seconds
+                        const timeElapsed = (position.timestamp - lastTimestamp) / 1000;
                         userSpeed_mps = distance / timeElapsed;
                     } else if (position.coords.speed !== null) {
-                        // Fallback to the device's native speed if available
                         userSpeed_mps = position.coords.speed;
                     }
                     lastPosition = userLocation;
                     lastTimestamp = position.timestamp;
 
-                    // If the marker doesn't exist, create it.
                     if (!userMarker) {
                         userMarker = new google.maps.Marker({
                             position: userLocation,
@@ -494,24 +496,24 @@
                             icon: {
                                 path: google.maps.SymbolPath.CIRCLE,
                                 scale: 10,
-                                fillColor: '#4285F4', // Google Blue
+                                fillColor: '#4285F4',
                                 fillOpacity: 1,
                                 strokeWeight: 2,
                                 strokeColor: '#FFFFFF',
                             },
                         });
                     } else {
-                        // If it exists, just update its position
                         userMarker.setPosition(userLocation);
                     }
 
-                    // Only center the map on the user's current location when a route is active
                     if (navigationSteps.length > 0) {
                       map.setCenter(userLocation);
                     }
                     
-                    // Update navigation based on live location
-                    updateNavigation(userLocation, userSpeed_mps);
+                    // Update navigation only if a route is synced (simulated device logic)
+                    if (routeTransferred) {
+                        updateNavigation(userLocation, userSpeed_mps);
+                    }
 
                     console.log(`Live location update: Lat ${userLocation.lat()}, Lng ${userLocation.lng()}`);
                 },
@@ -525,92 +527,6 @@
                     timeout: 5000
                 }
             );
-        }
-
-        // Event handler for characteristic value changes
-        function handleCharacteristicValueChanged(event) {
-            const characteristic = event.target;
-            const value = characteristic.value;
-
-            // Check the UUID and update the corresponding UI element
-            if (characteristic.uuid === NEXT_TURN_INSTRUCTION_UUID) {
-                nextTurnInstructionEl.textContent = new TextDecoder().decode(value);
-            } else if (characteristic.uuid === DISTANCE_TO_TURN_UUID) {
-                distanceToTurnEl.textContent = value.getUint16(0, true) + " m";
-            } else if (characteristic.uuid === TURN_DIRECTION_UUID) {
-                // You can map the byte value to a string or icon
-                const direction = value.getUint8(0);
-                turnDirectionEl.textContent = direction; // Replace with a meaningful string or symbol
-            } else if (characteristic.uuid === CURRENT_ROAD_NAME_UUID) {
-                currentRoadNameEl.textContent = new TextDecoder().decode(value);
-            } else if (characteristic.uuid === NEXT_ROAD_NAME_UUID) {
-                nextRoadNameEl.textContent = new TextDecoder().decode(value);
-            } else if (characteristic.uuid === ETA_UUID) {
-                etaEl.textContent = value.getUint16(0, true) + " min";
-            }
-        }
-
-        // Function to connect to the BLE device
-        async function connect() {
-            try {
-                // Hide data display and show loading status
-                dataDisplayDiv.classList.add('hidden');
-                statusSpan.textContent = "Scanning...";
-                connectButton.disabled = true;
-
-                // Request the device with the specified service
-                bleDevice = await navigator.bluetooth.requestDevice({
-                    filters: [{ services: [SERVICE_UUID] }]
-                });
-
-                statusSpan.textContent = `Connecting to ${bleDevice.name}...`;
-
-                // Set up event listener for disconnects
-                bleDevice.addEventListener('gattserverdisconnected', onDisconnected);
-
-                // Connect to the GATT server
-                const server = await bleDevice.gatt.connect();
-
-                statusSpan.textContent = "Getting Service...";
-
-                // Get the primary service
-                const service = await server.getPrimaryService(SERVICE_UUID);
-
-                statusSpan.textContent = "Getting Characteristics...";
-
-                // Get all characteristics
-                const characteristics = await service.getCharacteristics();
-
-                // Set up notifications for each characteristic
-                characteristics.forEach(async (char) => {
-                    if (char.properties.notify) {
-                        await char.startNotifications();
-                        char.addEventListener('characteristicvaluechanged', handleCharacteristicValueChanged);
-                        console.log(`Notifications started for characteristic: ${char.uuid}`);
-                    }
-                });
-                
-                statusSpan.textContent = "Connected!";
-                dataDisplayDiv.classList.remove('hidden');
-                displayMessage("Successfully connected to the device!");
-                
-            } catch (error) {
-                console.error('BLE connection error:', error);
-                statusSpan.textContent = "Disconnected";
-                connectButton.disabled = false;
-                dataDisplayDiv.classList.add('hidden');
-                displayMessage(`Connection failed: ${error.message}`, true);
-            }
-        }
-
-        // Function to handle disconnects
-        function onDisconnected(event) {
-            const device = event.target;
-            console.log(`Device ${device.name} disconnected.`);
-            statusSpan.textContent = "Disconnected";
-            connectButton.disabled = false;
-            dataDisplayDiv.classList.add('hidden');
-            displayMessage("Device disconnected. Click 'Connect' to reconnect.", true);
         }
 
         // Add event listeners to the buttons
