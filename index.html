@@ -266,16 +266,16 @@
             const remainingTime_s = remainingDistance / speed_mps;
             const remainingTime_min = Math.ceil(remainingTime_s / 60);
 
-            nextTurnInstructionEl.textContent = currentStep.instructions.replace(/<(?:.|\n)*?>/gm, '');
+            nextTurnInstructionEl.textContent = currentStep.instructions ? currentStep.instructions.replace(/<(?:.|\n)*?>/gm, '') : 'N/A';
             distanceToTurnEl.textContent = `${(remainingDistance).toFixed(0)} m`;
             
             // Extract maneuver and road information from the API response
             const maneuver = currentStep.maneuver;
-            const nextRoad = currentStep.html_instructions.match(/on (.*?) and/);
+            const nextRoad = currentStep.html_instructions ? currentStep.html_instructions.match(/on (.*?) and/) : null;
             
             turnDirectionEl.textContent = maneuver ? maneuver.replace(/_/g, ' ') : "Straight";
             currentRoadNameEl.textContent = "Your current road"; // This is a limitation, we can't get this easily
-            nextRoadNameEl.textContent = nextRoad ? nextRoad[1] : currentStep.html_instructions.replace(/<(?:.|\n)*?>/gm, '');
+            nextRoadNameEl.textContent = (nextRoad && nextRoad[1]) ? nextRoad[1] : (currentStep.html_instructions ? currentStep.html_instructions.replace(/<(?:.|\n)*?>/gm, '') : 'N/A');
             
             etaEl.textContent = `${remainingTime_min} min`;
 
